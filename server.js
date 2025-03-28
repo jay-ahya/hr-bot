@@ -111,30 +111,63 @@ client.once("ready", () => {
     }
   };
   
-  // Schedule for workdays (Monday-Friday) between 10 AM and 6 PM
-  // Generate random minutes for each hour
-  for (let hour = 10; hour <= 18; hour++) {
-    const randomMinute = getRandomInt(1, 59);
-    console.log(`Scheduling check for ${hour}:${randomMinute}`);
+ // Schedule for workdays (Monday-Friday) between 10 AM and 6 PM
+// Skip lunch break (1:30 PM - 2:30 PM)
+for (let hour = 10; hour <= 18; hour++) {
+  // Skip the lunch hour (13 = 1 PM)
+  if (hour === 13) {
+    // For 1 PM, only schedule before 1:30 PM
+    const randomMinute = getRandomInt(1, 29); // 1:01 to 1:29
+    console.log(`Scheduling pre-lunch check for ${hour}:${randomMinute}`);
     
-    // Schedule for weekdays
+    cron.schedule(
+      `${randomMinute} ${hour} * * Monday,Tuesday,Wednesday,Thursday,Friday`,
+      sendStatusMessage
+    );
+  } 
+  else if (hour === 14) {
+    // For 2 PM, only schedule after 2:30 PM
+    const randomMinute = getRandomInt(31, 59); // 2:31 to 2:59
+    console.log(`Scheduling post-lunch check for ${hour}:${randomMinute}`);
+    
     cron.schedule(
       `${randomMinute} ${hour} * * Monday,Tuesday,Wednesday,Thursday,Friday`,
       sendStatusMessage
     );
   }
-  
-  // Schedule for Saturday between 10 AM and 2 PM
-  for (let hour = 10; hour <= 14; hour++) {
+  else {
+    // Regular scheduling for other hours
+    const randomMinute = getRandomInt(1, 59);
+    console.log(`Scheduling regular check for ${hour}:${randomMinute}`);
+    
+    cron.schedule(
+      `${randomMinute} ${hour} * * Monday,Tuesday,Wednesday,Thursday,Friday`,
+      sendStatusMessage
+    );
+  }
+}
+
+// Schedule for Saturday between 10 AM and 1 PM only
+for (let hour = 10; hour <= 13; hour++) {
+  // For 1 PM on Saturday, only check before 1:30 PM
+  if (hour === 13) {
+    const randomMinute = getRandomInt(1, 29); // 1:01 to 1:29
+    console.log(`Scheduling Saturday pre-end check for ${hour}:${randomMinute}`);
+    
+    cron.schedule(
+      `${randomMinute} ${hour} * * Saturday`,
+      sendStatusMessage
+    );
+  } else {
     const randomMinute = getRandomInt(1, 59);
     console.log(`Scheduling Saturday check for ${hour}:${randomMinute}`);
     
-    // Schedule for Saturday
     cron.schedule(
       `${randomMinute} ${hour} * * Saturday`,
       sendStatusMessage
     );
   }
+}
   
   // Initial status check when bot starts
   console.log("Scheduling initial status check in 10 seconds");
