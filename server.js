@@ -113,7 +113,7 @@ client.once("ready", () => {
   
  // Schedule for workdays (Monday-Friday) between 10 AM and 6 PM
 // Skip lunch break (1:30 PM - 2:30 PM)
-for (let hour = 10; hour <= 18; hour++) {
+for (let hour = 10; hour <= 17; hour++) {
   // Skip the lunch hour (13 = 1 PM)
   if (hour === 13) {
     // For 1 PM, only schedule before 1:30 PM
