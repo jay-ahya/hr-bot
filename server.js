@@ -12,6 +12,11 @@ const guildId = process.env.GUILD_ID;
 const channelId = process.env.CHANNEL_ID;
 const discordToken = process.env.DISCORD_TOKEN;
 
+// Replace hardcoded array with environment variable
+const unavailableMemberIds = process.env.UNAVAILABLE_MEMBER_IDS 
+  ? process.env.UNAVAILABLE_MEMBER_IDS.split(',').map(id => id.trim())
+  : [];
+
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -31,17 +36,11 @@ function getRandomInt(min, max) {
   return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 
-const randomMinute1 = getRandomInt(10, 21);
-const randomMinute2 = getRandomInt(40, 51);
-
-const attendance = {};
-
-console.log(randomMinute1);
-console.log(randomMinute2);
+console.log("Starting Discord bot...");
 
 client.once("ready", () => {
   console.log(`Logged in as ${client.user.tag}!`);
-  isClientReady = true; // Set the flag when client is ready
+  isClientReady = true;
   
   const sendStatusMessage = () => {
     try {
@@ -57,19 +56,7 @@ client.once("ready", () => {
         return;
       }
       
-      const unavailableMemberIds = [
-        "750112234474176593",
-        "889391323386359849",
-        "808932563094601738",
-        "1163903275402285106",
-        "1331144477787557956",
-        "785045668465082380",
-        "802135058541576192",
-        "1290554851477946402",
-        "976754431070728212",
-        "1317012834785427498",
-      ];
-      console.log(new Date());
+      console.log(`Checking member statuses at ${new Date()}`);
       const statuses = {
         online: [],
         idle: [],
@@ -78,10 +65,6 @@ client.once("ready", () => {
       };
       
       guild.members.fetch({ withPresences: true }).then((members) => {
-        setTimeout(() => {
-          fs.writeFileSync("members.json", JSON.stringify(members));
-        }, 20 * 60 * 1000);
-        
         members
           .filter(
             (member) =>
@@ -89,9 +72,9 @@ client.once("ready", () => {
           )
           .forEach((member) => {
             if (member.presence) {
-              statuses[member.presence.status].push(member.user.globalName);
+              statuses[member.presence.status].push(member.user.globalName || member.user.username);
             } else {
-              statuses.offline.push(member.user.globalName);
+              statuses.offline.push(member.user.globalName || member.user.username);
             }
           });
 
@@ -118,25 +101,44 @@ client.once("ready", () => {
         try {
           channel.send(statusMessage);
         } catch (error) {
-          console.log(error);
+          console.log("Error sending message:", error);
         }
+      }).catch(error => {
+        console.error("Error fetching members:", error);
       });
     } catch (error) {
       console.error("Error in sendStatusMessage:", error);
     }
   };
   
-  // Set up cron jobs
-  cron.schedule(
-    `${randomMinute1} 10,13,16 * * Monday,Tuesday,Wednesday,Thursday,Friday`,
-    sendStatusMessage
-  );
-  cron.schedule(
-    `${randomMinute2} 11,14,17 * * Monday,Tuesday,Wednesday,Thursday,Friday`,
-    sendStatusMessage
-  );
-  cron.schedule(`${randomMinute1} 10,13 * * Saturday`, sendStatusMessage);
-  cron.schedule(`${randomMinute2} 11 * * Saturday`, sendStatusMessage);
+  // Schedule for workdays (Monday-Friday) between 10 AM and 6 PM
+  // Generate random minutes for each hour
+  for (let hour = 10; hour <= 18; hour++) {
+    const randomMinute = getRandomInt(1, 59);
+    console.log(`Scheduling check for ${hour}:${randomMinute}`);
+    
+    // Schedule for weekdays
+    cron.schedule(
+      `${randomMinute} ${hour} * * Monday,Tuesday,Wednesday,Thursday,Friday`,
+      sendStatusMessage
+    );
+  }
+  
+  // Schedule for Saturday between 10 AM and 2 PM
+  for (let hour = 10; hour <= 14; hour++) {
+    const randomMinute = getRandomInt(1, 59);
+    console.log(`Scheduling Saturday check for ${hour}:${randomMinute}`);
+    
+    // Schedule for Saturday
+    cron.schedule(
+      `${randomMinute} ${hour} * * Saturday`,
+      sendStatusMessage
+    );
+  }
+  
+  // Initial status check when bot starts
+  console.log("Scheduling initial status check in 10 seconds");
+  setTimeout(sendStatusMessage, 10000); // Wait 10 seconds after ready before first check
 });
 
 // Log errors for better debugging
@@ -190,6 +192,8 @@ app.get("/", async (req, res) => {
     
     do {
       const keys = messages.map((message) => parseInt(message.id));
+      if (keys.length === 0) break; // Prevent infinite loop if no messages
+      
       const lastKey = `${Math.min(...keys)}`;
       messages = await channel.messages.fetch({ limit: 100, before: lastKey });
       attendanceMessages.push(
@@ -363,7 +367,7 @@ app.get("/brb", async (req, res) => {
 
     const brbCount = {};
     for (const message of brbMessages) {
-      const author = message.author.globalName;
+      const author = message.author.globalName || message.author.username;
       if (!brbCount[author]) {
         brbCount[author] = 1;
       } else {
@@ -385,7 +389,11 @@ app.get("/status", (req, res) => {
   res.json({
     status: "online",
     clientReady: isClientReady,
-    clientLoggedIn: client.isReady()
+    clientLoggedIn: client.isReady(),
+    guildId: guildId,
+    channelId: channelId,
+    unavailableMemberCount: unavailableMemberIds.length,
+    unavailableMembers: unavailableMemberIds
   });
 });
 
