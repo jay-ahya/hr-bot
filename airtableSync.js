@@ -1,3 +1,4 @@
+// airtableSync.js
 const axios = require("axios");
 
 const AIRTABLE_TOKEN = process.env.AIRTABLE_TOKEN;
@@ -45,23 +46,31 @@ async function syncToAirtable(statusMap) {
   }
 
   const updates = [];
+  const now = new Date().toISOString();
 
   for (const [userId, data] of Object.entries(statusMap)) {
     const { name, status } = data;
-    const airtableField =
-      status === "idle"
-        ? "Idle"
-        : status === "dnd"
-        ? "Do Not Disturb"
-        : status === "offline"
-        ? "Offline"
-        : status === "online"
-        ? "Online"
-        : null;
+    let airtableField = null;
+
+    switch (status) {
+      case "idle":
+        airtableField = "Idle";
+        break;
+      case "dnd":
+        airtableField = "Do Not Disturb";
+        break;
+      case "offline":
+        airtableField = "Offline";
+        break;
+      case "online":
+        airtableField = "Online";
+        break;
+      case "brb":
+        airtableField = "BRBs";
+        break;
+    }
 
     if (!airtableField) continue;
-
-    const now = new Date().toISOString();
 
     if (recordsByUserId[userId]) {
       const record = recordsByUserId[userId];
@@ -85,7 +94,6 @@ async function syncToAirtable(statusMap) {
     }
   }
 
-  // Airtable API supports batch updates up to 10 records at a time
   const chunked = [];
   for (let i = 0; i < updates.length; i += 10) {
     chunked.push(updates.slice(i, i + 10));
@@ -93,11 +101,10 @@ async function syncToAirtable(statusMap) {
 
   for (const batch of chunked) {
     try {
-      const method = batch[0].id ? "patch" : "post";
-      const url = batch[0].id ? `${AIRTABLE_URL}` : `${AIRTABLE_URL}`;
+      const hasIds = batch.every((r) => r.id);
       await axios({
-        method,
-        url,
+        method: hasIds ? "patch" : "post",
+        url: AIRTABLE_URL,
         headers: airtableHeaders,
         data: {
           records: batch,
