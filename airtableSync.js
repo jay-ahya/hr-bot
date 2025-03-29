@@ -1,119 +1,97 @@
 // airtableSync.js
-const axios = require("axios");
+require('dotenv').config();
+const Airtable = require('airtable');
 
-const AIRTABLE_TOKEN = process.env.AIRTABLE_TOKEN;
-const BASE_ID = process.env.AIRTABLE_BASE_ID;
-const TABLE_ID = process.env.AIRTABLE_TABLE_ID;
+// Configure Airtable
+const base = new Airtable({ apiKey: process.env.AIRTABLE_API_KEY }).base(process.env.AIRTABLE_BASE_ID);
+const table = base(process.env.AIRTABLE_TABLE_NAME || 'Attendance Tracking');
 
-const AIRTABLE_URL = `https://api.airtable.com/v0/${BASE_ID}/${TABLE_ID}`;
-
-const airtableHeaders = {
-  Authorization: `Bearer ${AIRTABLE_TOKEN}`,
-  "Content-Type": "application/json",
-};
-
-async function fetchAllRecords() {
-  let allRecords = [];
-  let offset = null;
-
+/**
+ * Sync a user's status to Airtable
+ * @param {string} userId - Discord user ID
+ * @param {string} userName - Discord user name
+ * @param {string} status - 'online', 'idle', 'dnd', 'offline'
+ * @returns {Promise} - Promise resolving to the updated/created record
+ */
+async function syncStatusToAirtable(userId, userName, status) {
   try {
-    do {
-      const response = await axios.get(AIRTABLE_URL, {
-        headers: airtableHeaders,
-        params: offset ? { offset } : {},
-      });
-
-      allRecords = [...allRecords, ...response.data.records];
-      offset = response.data.offset;
-    } while (offset);
-
-    return allRecords;
+    console.log(`Syncing ${userName} (${userId}) with status: ${status}`);
+    
+    // Find if user already exists in Airtable
+    const records = await table.select({
+      filterByFormula: `{User ID} = "${userId}"`,
+    }).firstPage();
+    
+    const now = new Date().toISOString();
+    
+    if (records.length > 0) {
+      // User exists, update their record
+      const record = records[0];
+      const currentCount = record.get(status) || 0;
+      
+      const fields = {
+        [status]: currentCount + 1,
+        'Last Updated': now
+      };
+      
+      return await table.update(record.id, fields);
+    } else {
+      // User doesn't exist, create a new record
+      const fields = {
+        'User ID': userId,
+        'User Name': userName,
+        [status]: 1,
+        'Last Updated': now
+      };
+      
+      return await table.create(fields);
+    }
   } catch (error) {
-    console.error("Error fetching Airtable records:", error.message);
-    return [];
+    console.error('Error syncing to Airtable:', error);
   }
 }
 
-async function syncToAirtable(statusMap) {
-  const existingRecords = await fetchAllRecords();
-
-  const recordsByUserId = {};
-  for (const record of existingRecords) {
-    const userId = record.fields["User ID"];
-    if (userId) {
-      recordsByUserId[userId] = record;
-    }
-  }
-
-  const updates = [];
-  const now = new Date().toISOString();
-
-  for (const [userId, data] of Object.entries(statusMap)) {
-    const { name, status } = data;
-    let airtableField = null;
-
-    switch (status) {
-      case "idle":
-        airtableField = "Idle";
-        break;
-      case "dnd":
-        airtableField = "Do Not Disturb";
-        break;
-      case "offline":
-        airtableField = "Offline";
-        break;
-      case "online":
-        airtableField = "Online";
-        break;
-      case "brb":
-        airtableField = "BRBs";
-        break;
-    }
-
-    if (!airtableField) continue;
-
-    if (recordsByUserId[userId]) {
-      const record = recordsByUserId[userId];
-      const currentValue = record.fields[airtableField] || 0;
-      updates.push({
-        id: record.id,
-        fields: {
-          [airtableField]: currentValue + 1,
-          "Last Updated": now,
-        },
+/**
+ * Increment BRB count for a user
+ * @param {string} userId - Discord user ID
+ * @param {string} userName - Discord user name
+ * @returns {Promise} - Promise resolving to the updated/created record
+ */
+async function incrementBRB(userId, userName) {
+  try {
+    console.log(`Incrementing BRB count for ${userName} (${userId})`);
+    
+    // Find if user already exists in Airtable
+    const records = await table.select({
+      filterByFormula: `{User ID} = "${userId}"`,
+    }).firstPage();
+    
+    const now = new Date().toISOString();
+    
+    if (records.length > 0) {
+      // User exists, update their record
+      const record = records[0];
+      const currentBRBs = record.get('BRBs') || 0;
+      
+      return await table.update(record.id, {
+        'BRBs': currentBRBs + 1,
+        'Last Updated': now
       });
     } else {
-      updates.push({
-        fields: {
-          "User ID": userId,
-          "User Name": name,
-          [airtableField]: 1,
-          "Last Updated": now,
-        },
+      // User doesn't exist, create a new record
+      return await table.create({
+        'User ID': userId,
+        'User Name': userName,
+        'BRBs': 1,
+        'Last Updated': now
       });
     }
-  }
-
-  const chunked = [];
-  for (let i = 0; i < updates.length; i += 10) {
-    chunked.push(updates.slice(i, i + 10));
-  }
-
-  for (const batch of chunked) {
-    try {
-      const hasIds = batch.every((r) => r.id);
-      await axios({
-        method: hasIds ? "patch" : "post",
-        url: AIRTABLE_URL,
-        headers: airtableHeaders,
-        data: {
-          records: batch,
-        },
-      });
-    } catch (error) {
-      console.error("Error syncing batch to Airtable:", error.message);
-    }
+  } catch (error) {
+    console.error('Error incrementing BRB count:', error);
   }
 }
 
-module.exports = { syncToAirtable };
+module.exports = {
+  syncStatusToAirtable,
+  incrementBRB
+};
