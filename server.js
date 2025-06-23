@@ -5,6 +5,11 @@ const { Client, GatewayIntentBits, Partials } = require("discord.js");
 const cron = require("node-cron");
 const { syncStatusToAirtable, incrementBRB } = require('./airtableSync');
 
+// Utility: get current time in Asia/Kolkata timezone
+function getKolkataTime() {
+  return new Date(new Date().toLocaleString("en-US", {timeZone: "Asia/Kolkata"}));
+}
+
 // Utility: check if current date is the 3rd Saturday of the month
 function isThirdSaturday(date) {
   const year = date.getFullYear();
@@ -27,28 +32,42 @@ function isThirdSaturday(date) {
   const thirdSaturday = firstSaturday + 14;
   
   // Check if current date is the third Saturday
-  return date.getDate() === thirdSaturday;
+  const isThird = date.getDate() === thirdSaturday && date.getDay() === 6;
+  
+  if (isThird) {
+    console.log(`📅 Today (${date.getDate()}) is the 3rd Saturday of the month`);
+  }
+  
+  return isThird;
 }
 
 // Utility: check if current time is within working hours
-function isWorkingHour(date) {
-  const day = date.getDay();    // 0 = Sunday, 6 = Saturday
-  const hour = date.getHours(); // 0-23
+function isWorkingHour(date = null) {
+  // Use Kolkata time if no date provided
+  const kolkataTime = date || getKolkataTime();
+  const day = kolkataTime.getDay();    // 0 = Sunday, 6 = Saturday
+  const hour = kolkataTime.getHours(); // 0-23
+  
+  console.log(`🕐 Checking time: ${kolkataTime.toLocaleString('en-IN', {timeZone: 'Asia/Kolkata'})} (Day: ${day}, Hour: ${hour})`);
 
   // Check if it's the 3rd Saturday of the month (team holiday)
-  if (isThirdSaturday(date)) {
+  if (isThirdSaturday(kolkataTime)) {
     console.log('🚫 Third Saturday of the month - team holiday, skipping status check');
     return false;
   }
 
   // Mon–Fri, 10:00–17:59
   if (day >= 1 && day <= 5 && hour >= 10 && hour < 18) {
+    console.log('✅ Within weekday working hours');
     return true;
   }
   // Saturday (excluding 3rd Saturday), 10:00–12:59
   if (day === 6 && hour >= 10 && hour < 13) {
+    console.log('✅ Within Saturday working hours');
     return true;
   }
+  
+  console.log('❌ Outside working hours');
   return false;
 }
 
@@ -107,8 +126,7 @@ client.once("ready", () => {
 
   // Core status check function with guard
   const sendStatusMessage = async () => {
-    const now = new Date();
-    if (!isWorkingHour(now)) {
+    if (!isWorkingHour()) {
       console.log('⏭️ Outside working hours; skipping ping');
       return;
     }
@@ -118,7 +136,8 @@ client.once("ready", () => {
       const channel = guild.channels.cache.get(channelId);
       if (!channel) return console.error(`Channel not found: ${channelId}`);
 
-      console.log(`Checking statuses at ${now}`);
+      const kolkataTime = getKolkataTime();
+      console.log(`Checking statuses at ${kolkataTime.toLocaleString('en-IN', {timeZone: 'Asia/Kolkata'})}`);
       const statuses = { online: [], idle: [], dnd: [], offline: [] };
       const members = await guild.members.fetch({ withPresences: true });
       const updates = [];
@@ -175,8 +194,7 @@ client.once("ready", () => {
 
   // Initial ping 10s after ready, but only if within working hours
   setTimeout(() => {
-    const now = new Date();
-    if (isWorkingHour(now)) sendStatusMessage();
+    if (isWorkingHour()) sendStatusMessage();
     else console.log('Skipping startup ping; outside working hours');
   }, 10000);
 });
