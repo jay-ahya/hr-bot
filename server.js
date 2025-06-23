@@ -5,16 +5,47 @@ const { Client, GatewayIntentBits, Partials } = require("discord.js");
 const cron = require("node-cron");
 const { syncStatusToAirtable, incrementBRB } = require('./airtableSync');
 
+// Utility: check if current date is the 3rd Saturday of the month
+function isThirdSaturday(date) {
+  const year = date.getFullYear();
+  const month = date.getMonth();
+  
+  // Get the first day of the month
+  const firstDay = new Date(year, month, 1);
+  const firstDayOfWeek = firstDay.getDay(); // 0 = Sunday, 6 = Saturday
+  
+  // Calculate days to add to get to first Saturday
+  // If first day is Sunday (0), first Saturday is 6 days later
+  // If first day is Monday (1), first Saturday is 5 days later
+  // If first day is Saturday (6), first Saturday is 0 days later
+  const daysToFirstSaturday = (6 - firstDayOfWeek) % 7;
+  
+  // First Saturday date
+  const firstSaturday = 1 + daysToFirstSaturday;
+  
+  // Third Saturday is 14 days (2 weeks) after first Saturday
+  const thirdSaturday = firstSaturday + 14;
+  
+  // Check if current date is the third Saturday
+  return date.getDate() === thirdSaturday;
+}
+
 // Utility: check if current time is within working hours
 function isWorkingHour(date) {
   const day = date.getDay();    // 0 = Sunday, 6 = Saturday
   const hour = date.getHours(); // 0-23
 
+  // Check if it's the 3rd Saturday of the month (team holiday)
+  if (isThirdSaturday(date)) {
+    console.log('🚫 Third Saturday of the month - team holiday, skipping status check');
+    return false;
+  }
+
   // Mon–Fri, 10:00–17:59
   if (day >= 1 && day <= 5 && hour >= 10 && hour < 18) {
     return true;
   }
-  // Saturday, 10:00–12:59
+  // Saturday (excluding 3rd Saturday), 10:00–12:59
   if (day === 6 && hour >= 10 && hour < 13) {
     return true;
   }
@@ -136,7 +167,7 @@ client.once("ready", () => {
     }
   }
 
-  // Schedule Saturday 10–12 only
+  // Schedule Saturday 10–12 only (but will be skipped if it's 3rd Saturday)
   for (let hour = 10; hour <= 12; hour++) {
     const min = getRandomInt(1, 59);
     cron.schedule(`${min} ${hour} * * Saturday`, sendStatusMessage, { timezone: 'Asia/Kolkata' });
